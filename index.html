@@ -1428,100 +1428,125 @@ document.getElementById('drawer-handle').addEventListener('click', () => {
 // The ward layers (wards-fill, wards-line, wards-hover,
 // wards-pinned) are appended last so they sit above the base map.
 // ============================================================
-async function buildMapStyle(geojsonData, DATA) {
+function buildMapStyle(geojsonData, DATA) {
 
   // Build the winner colour-match expression
   const colorMatch = ['match', ['get', 'ward_code']];
   Object.entries(DATA).forEach(([code, d]) => {
     colorMatch.push(code, PARTIES[d.winner]?.color || '#888780');
   });
-  colorMatch.push('#cccccc'); // fallback for unmatched wards
+  colorMatch.push('#cccccc');
 
-  // Load your Maputnik style JSON
-  let style;
-  try {
-    const res = await fetch('style.json');
-    if (!res.ok) throw new Error(`style.json returned ${res.status}`);
-    style = await res.json();
-    console.log('[STYLE] Loaded style.json successfully');
-  } catch (err) {
-    // Fallback to a minimal built-in style if style.json fails to load
-    console.warn('[STYLE] Could not load style.json, using fallback:', err.message);
-    style = {
-      version: 8,
-      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-      sources: {
-        basemap: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
-      },
-      layers: [
-        { id: 'bg', type: 'background', paint: { 'background-color': '#f0ede8' } },
-        { id: 'water', type: 'fill', source: 'basemap', 'source-layer': 'water',
-          paint: { 'fill-color': '#cee0e8', 'fill-opacity': 0.85 } },
-        { id: 'road-main', type: 'line', source: 'basemap', 'source-layer': 'transportation',
-          filter: ['in', ['get', 'class'], ['literal', ['primary','secondary','tertiary']]],
-          paint: { 'line-color': '#ddd8d0',
-            'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 14, 2.5] } },
-        { id: 'place-labels', type: 'symbol', source: 'basemap', 'source-layer': 'place',
-          filter: ['in', ['get', 'class'], ['literal', ['city','town','suburb']]],
-          layout: { 'text-field': ['get', 'name'], 'text-font': ['Noto Sans Regular'],
-            'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 13, 14] },
-          paint: { 'text-color': '#555', 'text-halo-color': 'rgba(240,237,232,0.85)',
-            'text-halo-width': 1.5 } },
-      ],
-    };
-  }
-
-  // Inject the wards GeoJSON source
-  style.sources.wards = { type: 'geojson', data: geojsonData, generateId: true };
-
-  // Remove any existing ward layers from the style (safety check)
-  const wardLayerIds = ['wards-fill','wards-line','wards-hover','wards-pinned'];
-  style.layers = style.layers.filter(l => !wardLayerIds.includes(l.id));
-
-  // Append ward layers on top of everything else
-  style.layers.push(
-    {
-      id: 'wards-fill',
-      type: 'fill',
-      source: 'wards',
-      paint: { 'fill-color': colorMatch, 'fill-opacity': 0.55 },
+  // ── Base map style ──────────────────────────────────────────
+  // Colours taken from your Maputnik design.
+  // All source-layers use OpenFreeMap's schema.
+  return {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: {
+      basemap: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
+      wards:   { type: 'geojson', data: geojsonData, generateId: true },
     },
-    {
-      id: 'wards-line',
-      type: 'line',
-      source: 'wards',
-      paint: { 'line-color': '#000000', 'line-width': 0.6, 'line-opacity': 0.4 },
-    },
-    {
+    layers: [
+
+      // Background land
+      { id: 'bg', type: 'background',
+        paint: { 'background-color': 'rgba(245, 242, 232, 1)' } },
+
+      // Water
+      { id: 'water', type: 'fill', source: 'basemap', 'source-layer': 'water',
+        paint: { 'fill-color': 'hsl(205, 56%, 73%)', 'fill-opacity': 0.9 } },
+
+      // Green spaces — grass, parks, wood, cemetery
+      { id: 'landcover-green', type: 'fill', source: 'basemap', 'source-layer': 'landuse',
+        filter: ['in', ['get', 'class'], ['literal', ['park','grass','cemetery','forest','meadow','nature_reserve']]],
+        paint: { 'fill-color': 'hsl(82, 46%, 72%)', 'fill-opacity': 0.5 } },
+
+      // Residential landuse tint
+      { id: 'landuse-residential', type: 'fill', source: 'basemap', 'source-layer': 'landuse',
+        filter: ['in', ['get', 'class'], ['literal', ['residential','suburb','neighbourhood']]],
+        paint: { 'fill-color': 'rgba(222, 211, 190, 1)', 'fill-opacity': 0.45 } },
+
+      // Roads — five tiers, muted warm palette
+      { id: 'road-path', type: 'line', source: 'basemap', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['path','track','service']]],
+        paint: { 'line-color': 'rgba(200,195,185,1)',
+          'line-width': ['interpolate',['linear'],['zoom'], 13,0.4, 17,1.2] } },
+
+      { id: 'road-minor', type: 'line', source: 'basemap', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['minor','residential']]],
+        paint: { 'line-color': 'rgba(210,205,192,1)',
+          'line-width': ['interpolate',['linear'],['zoom'], 11,0.4, 15,2] } },
+
+      { id: 'road-secondary', type: 'line', source: 'basemap', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['secondary','tertiary']]],
+        paint: { 'line-color': 'rgba(200,193,178,1)',
+          'line-width': ['interpolate',['linear'],['zoom'], 9,0.5, 14,3] } },
+
+      { id: 'road-primary', type: 'line', source: 'basemap', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['primary']]],
+        paint: { 'line-color': 'rgba(188,178,160,1)',
+          'line-width': ['interpolate',['linear'],['zoom'], 8,0.8, 14,4] } },
+
+      { id: 'road-motorway', type: 'line', source: 'basemap', 'source-layer': 'transportation',
+        filter: ['in', ['get', 'class'], ['literal', ['motorway','trunk']]],
+        paint: { 'line-color': 'rgba(175,165,145,1)',
+          'line-width': ['interpolate',['linear'],['zoom'], 6,1, 14,5] } },
+
+      // Railway
+      { id: 'railway', type: 'line', source: 'basemap', 'source-layer': 'transportation',
+        filter: ['==', ['get', 'class'], 'rail'],
+        paint: { 'line-color': 'hsl(34,12%,66%)', 'line-width': 1, 'line-opacity': 0.7 } },
+
+      // Buildings — appear from zoom 12
+      { id: 'buildings', type: 'fill', source: 'basemap', 'source-layer': 'building',
+        minzoom: 12,
+        paint: { 'fill-color': 'rgba(185, 176, 169, 1)', 'fill-opacity': 0.9,
+          'fill-outline-color': 'rgba(165,156,148,1)' } },
+
+      // Ward fills — election results
+      { id: 'wards-fill', type: 'fill', source: 'wards',
+        paint: { 'fill-color': colorMatch, 'fill-opacity': 0.55 } },
+
+      { id: 'wards-line', type: 'line', source: 'wards',
+        paint: { 'line-color': '#000000', 'line-width': 0.6, 'line-opacity': 0.4 } },
+
       // Hover highlight
-      id: 'wards-hover',
-      type: 'fill',
-      source: 'wards',
-      paint: {
-        'fill-color': colorMatch,
-        'fill-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.25, 0],
-      },
-    },
-    {
-      // Pinned ward — dark outline on clicked ward
-      id: 'wards-pinned',
-      type: 'line',
-      source: 'wards',
-      paint: {
-        'line-color': '#111111',
-        'line-width': 1.5,
-        'line-opacity': ['case', ['boolean', ['feature-state', 'pinned'], false], 1, 0],
-      },
-    }
-  );
+      { id: 'wards-hover', type: 'fill', source: 'wards',
+        paint: {
+          'fill-color': colorMatch,
+          'fill-opacity': ['case', ['boolean', ['feature-state','hover'], false], 0.25, 0],
+        } },
 
-  return style;
+      // Pinned ward outline
+      { id: 'wards-pinned', type: 'line', source: 'wards',
+        paint: {
+          'line-color': '#111111', 'line-width': 1.5,
+          'line-opacity': ['case', ['boolean', ['feature-state','pinned'], false], 1, 0],
+        } },
+
+      // Place labels — on top of everything
+      { id: 'place-labels', type: 'symbol', source: 'basemap', 'source-layer': 'place',
+        filter: ['in', ['get', 'class'], ['literal', ['city','town','suburb','village']]],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate',['linear'],['zoom'], 9,10, 13,14],
+          'text-anchor': 'center', 'text-max-width': 8,
+        },
+        paint: {
+          'text-color': 'hsl(0,0%,25%)',
+          'text-halo-color': 'hsla(0,0%,100%,0.85)',
+          'text-halo-width': 2,
+        } },
+    ],
+  };
 }
 
 // ============================================================
 // MAP INITIALISATION
 // ============================================================
-async function initMap(geojsonData, DATA) {
+function initMap(geojsonData, DATA) {
   const container = document.getElementById('map-container');
   const sidePanel = document.getElementById('side-panel');
   const drawer = document.getElementById('drawer');
@@ -1572,7 +1597,7 @@ async function initMap(geojsonData, DATA) {
 
   window._electionMap = new maplibregl.Map({
     container: 'map',
-    style: await buildMapStyle(geojsonData, DATA),
+    style: buildMapStyle(geojsonData, DATA),
     center: MAP_CENTER,
     zoom: MAP_ZOOM,
     attributionControl: false,
@@ -2003,7 +2028,7 @@ async function bootstrap() {
     }),
   };
 
-  await initMap(geojsonData, DATA);
+  initMap(geojsonData, DATA);
 }
 
 bootstrap();
