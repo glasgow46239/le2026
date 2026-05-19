@@ -95,10 +95,9 @@
     }
 
     .result-bar-text {
-      font-size: 10px;
-      font-weight: 800;
+      font-size: 11px;
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
       color: #fff;
     }
 
@@ -644,6 +643,12 @@ const PARTIES = {
     label: 'Independent',
     color: '#CCA7C6',
     bg: '#CCA7C6',
+    text: '#444441',
+  },
+  Oth: {
+    label: 'Other',
+    color: '#BBBBBB',
+    bg: '#BBBBBB',
     text: '#444441',
   },
 };
@@ -1222,6 +1227,7 @@ function buildDataFromCSV(rows) {
       Grn: parseFloat(row.grn_pct) || 0,
       Ref: parseFloat(row.ref_pct) || 0,
       Ind: parseFloat(row.ind_pct) || 0,
+      Oth: parseFloat(row.oth_pct) || 0,
     };
     const prev = {
       Lab: parseFloat(row.lab_prev) || 0,
@@ -1230,6 +1236,7 @@ function buildDataFromCSV(rows) {
       Grn: parseFloat(row.grn_prev) || 0,
       Ref: parseFloat(row.ref_prev) || 0,
       Ind: parseFloat(row.ind_prev) || 0,
+      Oth: parseFloat(row.oth_prev) || 0,
     };
     const sorted = Object.entries(curr)
       .filter(([, v]) => v > 0)
@@ -1238,6 +1245,7 @@ function buildDataFromCSV(rows) {
     data[code] = {
       ward_name: row.ward_name || code,
       council: row.council || '',
+      is_new: row.is_new === '1' || row.is_new?.toLowerCase() === 'true' || row.is_new?.toLowerCase() === 'yes',
       winner: row.winner || sorted[0]?.[0] || 'Ind',
       prev_winner: row.prev_winner || '',
       curr,
@@ -1315,10 +1323,14 @@ function buildPanelHeader(d) {
 
 function buildPanelBody(d) {
   const max = d.sorted[0]?.[1] || 1;
+  const showChg = !d.is_new;
   const tableRows = d.sorted
     .map(([pt, s]) => {
       const party = PARTIES[pt] || PARTIES.Ind;
       const chg = s - (d.prev[pt] || 0);
+      const chgCell = showChg
+        ? `<td class="chg-cell ${chgClass(chg)}">${chgStr(chg)}</td>`
+        : '';
       return `<tr>
         <td><div class="party-cell">
           <div class="party-stripe" style="background:${party.color};"></div>
@@ -1326,19 +1338,27 @@ function buildPanelBody(d) {
         </div></td>
         <td class="pct-cell">${s.toFixed(1)}</td>
         <td class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${((s / max) * 100).toFixed(1)}%;background:${party.color};"></div></div></td>
-        <td class="chg-cell ${chgClass(chg)}">${chgStr(chg)}</td>
+        ${chgCell}
       </tr>`;
     })
     .join('');
 
-  return `
-      <div class="stacked-section">
+  const chgHeader = showChg ? '<th>Chg.</th>' : '';
+  const stackedSection = showChg
+    ? `<div class="stacked-section">
         <div class="stacked-label">Result vs. prev</div>
         ${stackedBarHTML(d.curr, '')}
         ${stackedBarHTML(d.prev, 'previous')}
-      </div>
+      </div>`
+    : `<div class="stacked-section">
+        <div class="stacked-label">Result</div>
+        ${stackedBarHTML(d.curr, '')}
+      </div>`;
+
+  return `
+      ${stackedSection}
       <table class="results-table">
-        <thead><tr><th>Party</th><th>Pct.</th><th></th><th>Chg.</th></tr></thead>
+        <thead><tr><th>Party</th><th>Pct.</th><th></th>${chgHeader}</tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
       <div class="stats-grid">
@@ -1754,20 +1774,20 @@ function initMap(geojsonData, DATA) {
 // ============================================================
 const CHOROPLETH_CEILINGS = {
   Lab:  65, Con:  65, LDem: 50,
-  Grn:  50, Ref:  50, Ind:  40,
+  Grn:  50, Ref:  50, Ind:  40, Oth: 30,
 };
 const CHOROPLETH_DEFAULT_CEILING = 50;
 
 // The CSV column key for each party's current vote share
 const PARTY_PCT_KEY = {
   Lab: 'lab_pct', Con: 'con_pct', LDem: 'ld_pct',
-  Grn: 'grn_pct', Ref: 'ref_pct', Ind:  'ind_pct',
+  Grn: 'grn_pct', Ref: 'ref_pct', Ind:  'ind_pct', Oth: 'oth_pct',
 };
 
 // curr object key (matches buildDataFromCSV)
 const PARTY_CURR_KEY = {
   Lab: 'Lab', Con: 'Con', LDem: 'LDem',
-  Grn: 'Grn', Ref: 'Ref', Ind:  'Ind',
+  Grn: 'Grn', Ref: 'Ref', Ind:  'Ind', Oth: 'Oth',
 };
 
 function hexToRgb(hex) {
