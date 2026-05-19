@@ -1200,19 +1200,49 @@ function buildDemoGeoJSON() {
 }
 
 // ============================================================
-// CSV PARSING
+// CSV PARSING — RFC 4180-compliant, handles quoted fields
+// containing commas, newlines, and escaped quotes ("")
 // ============================================================
+function parseCSVLine(line) {
+  const fields = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"'; i++; // escaped quote
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(cur.trim());
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+  }
+  fields.push(cur.trim());
+  return fields;
+}
+
 function parseCSV(text) {
   const lines = text.trim().split('\n');
-  const headers = lines[0]
-    .split(',')
-    .map((h) => h.trim().replace(/^"|"$/g, ''));
-  return lines.slice(1).map((line) => {
-    const vals = line.split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
-    const row = {};
-    headers.forEach((h, i) => (row[h] = vals[i] || ''));
-    return row;
-  });
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1)
+    .filter(l => l.trim())
+    .map((line) => {
+      const vals = parseCSVLine(line);
+      const row = {};
+      headers.forEach((h, i) => (row[h] = vals[i] ?? ''));
+      return row;
+    });
 }
 
 function buildDataFromCSV(rows) {
