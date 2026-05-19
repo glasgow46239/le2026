@@ -639,7 +639,7 @@ const PARTIES = {
   },
   LDem: { label: 'Lib Dem', color: '#EBB82F', bg: '#EBB82F', text: '#7a4d00' },
   Grn: { label: 'Green', color: '#5CBC4A', bg: '#5CBC4A', text: '#015c30' },
-  Ref: { label: 'Reform UK', color: '#15B6C2', bg: '#15B6C2', text: '#076373' },
+  Ref: { label: 'Reform', color: '#15B6C2', bg: '#15B6C2', text: '#076373' },
   Ind: {
     label: 'Independent',
     color: '#CCA7C6',
@@ -1115,15 +1115,15 @@ const DEMO_BIAS = {
   Hounslow: 'Lab',
   Islington: 'Lab',
   'Kensington & Chelsea': 'Con',
-  'Kingston upon Thames': 'LD',
+  'Kingston upon Thames': 'LDem',
   Lambeth: 'Lab',
   Lewisham: 'Lab',
   Merton: 'Lab',
   Newham: 'Lab',
   Redbridge: 'Lab',
-  'Richmond upon Thames': 'LD',
+  'Richmond upon Thames': 'LDem',
   Southwark: 'Lab',
-  Sutton: 'LD',
+  Sutton: 'LDem',
   'Tower Hamlets': 'Lab',
   'Waltham Forest': 'Lab',
   Wandsworth: 'Lab',
@@ -1218,7 +1218,7 @@ function buildDataFromCSV(rows) {
     const curr = {
       Lab: parseFloat(row.lab_pct) || 0,
       Con: parseFloat(row.con_pct) || 0,
-      LD: parseFloat(row.ld_pct) || 0,
+      LDem: parseFloat(row.ld_pct) || 0,
       Grn: parseFloat(row.grn_pct) || 0,
       Ref: parseFloat(row.ref_pct) || 0,
       Ind: parseFloat(row.ind_pct) || 0,
@@ -1226,7 +1226,7 @@ function buildDataFromCSV(rows) {
     const prev = {
       Lab: parseFloat(row.lab_prev) || 0,
       Con: parseFloat(row.con_prev) || 0,
-      LD: parseFloat(row.ld_prev) || 0,
+      LDem: parseFloat(row.ld_prev) || 0,
       Grn: parseFloat(row.grn_prev) || 0,
       Ref: parseFloat(row.ref_prev) || 0,
       Ind: parseFloat(row.ind_prev) || 0,
@@ -1766,7 +1766,7 @@ const PARTY_PCT_KEY = {
 
 // curr object key (matches buildDataFromCSV)
 const PARTY_CURR_KEY = {
-  Lab: 'Lab', Con: 'Con', LDem: 'LD',
+  Lab: 'Lab', Con: 'Con', LDem: 'LDem',
   Grn: 'Grn', Ref: 'Ref', Ind:  'Ind',
 };
 
