@@ -21,7 +21,7 @@
     #map-container {
       position: relative;
       width: 100%;
-      height: 560px;
+      height: 620px;
     }
 
     #map {
@@ -43,7 +43,7 @@
       width: 280px;
       max-height: 100%;
       background: #ffffff;
-      border-left: 1px solid #e5e5e5;
+      border-left: 0px solid #e5e5e5;
       border-bottom: 1px solid #e5e5e5;
       border-bottom-left-radius: 4px;
       display: flex;
@@ -621,7 +621,7 @@
 
 <p class="map-credit">
   Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &middot;
-  Tiles by <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a>
+  Tiles by <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> &middot; <a href="https://britainelects.com" target="_blank">Britain Elects</a>
 </p>
 
   <script>
@@ -1390,13 +1390,7 @@ function buildPanelBody(d) {
       <table class="results-table">
         <thead><tr><th>Party</th><th>Pct.</th><th></th>${chgHeader}</tr></thead>
         <tbody>${tableRows}</tbody>
-      </table>
-      <div class="stats-grid">
-        <div class="stat-box"><div class="stat-label">Turnout</div><div class="stat-value">${parseFloat(d.turnout).toFixed(1)}%</div></div>
-        <div class="stat-box"><div class="stat-label">Electorate</div><div class="stat-value">${Number(d.electorate).toLocaleString()}</div></div>
-        <div class="stat-box"><div class="stat-label">Majority</div><div class="stat-value">${Number(d.majority).toLocaleString()}</div></div>
-        <div class="stat-box"><div class="stat-label">Swing</div><div class="stat-value ${chgClass(d.swing)}">${chgStr(d.swing)}%</div></div>
-      </div>`;
+      </table>`;
 }
 
 function showSidePanel(wardCode, DATA) {
