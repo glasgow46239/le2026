@@ -204,8 +204,8 @@
       white-space: nowrap;
     }
 
-    .chg-pos { color: #059669; }
-    .chg-neg { color: #DC2626; }
+    .chg-pos { color: var(--be-positive-text, #2A6FB0); }
+    .chg-neg { color: var(--be-negative-text, #B35A0E); }
     .chg-nil { color: #bbb; }
 
     /* =========================================================
@@ -624,33 +624,40 @@
   Tiles by <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> &middot; <a href="https://britainelects.com" target="_blank">Britain Elects</a>
 </p>
 
+  <link rel="stylesheet" href="https://glasgow46239.github.io/style/be.css">
+  <script src="https://glasgow46239.github.io/style/be.js"></script>
+
   <script>
     // ============================================================
 // PARTY DEFINITIONS
 // ============================================================
 const PARTIES = {
-  Lab: { label: 'Labour', color: '#D34C4C', bg: '#D34C4C', text: '#8c001e' },
+  Lab: { label: 'Labour', color: BE.fill('Lab'), bg: BE.fill('Lab'), text: BE.text('Lab') },
   Con: {
     label: 'Conservative',
-    color: '#05718F',
-    bg: '#05718F',
-    text: '#004d82',
+    color: BE.fill('Con'),
+    bg: BE.fill('Con'),
+    text: BE.text('Con'),
   },
-  LDem: { label: 'Lib Dem', color: '#EBB82F', bg: '#EBB82F', text: '#7a4d00' },
-  Grn: { label: 'Green', color: '#5CBC4A', bg: '#5CBC4A', text: '#015c30' },
-  Ref: { label: 'Reform', color: '#15B6C2', bg: '#15B6C2', text: '#076373' },
+  LDem: { label: 'Lib Dem', color: BE.fill('LDem'), bg: BE.fill('LDem'), text: BE.text('LDem') },
+  Grn: { label: 'Green', color: BE.fill('Grn'), bg: BE.fill('Grn'), text: BE.text('Grn') },
+  Ref: { label: 'Reform', color: BE.fill('Ref'), bg: BE.fill('Ref'), text: BE.text('Ref') },
   Ind: {
     label: 'Independent',
-    color: '#CCA7C6',
-    bg: '#CCA7C6',
-    text: '#444441',
+    color: BE.fill('Ind'),
+    bg: BE.fill('Ind'),
+    text: BE.text('Ind'),
   },
   Oth: {
     label: 'Other',
-    color: '#BBBBBB',
-    bg: '#BBBBBB',
-    text: '#444441',
+    color: BE.fill('Oth'),
+    bg: BE.fill('Oth'),
+    text: BE.text('Oth'),
   },
+  // Keys used in PARTY_ORDER that had no colour before (fell back to grey).
+  LD: { label: 'Lib Dem', color: BE.fill('LD'), bg: BE.fill('LD'), text: BE.text('LD') },
+  SNP: { label: 'SNP', color: BE.fill('SNP'), bg: BE.fill('SNP'), text: BE.text('SNP') },
+  PC: { label: 'Plaid Cymru', color: BE.fill('PC'), bg: BE.fill('PC'), text: BE.text('PC') },
 };
 
 // ============================================================
