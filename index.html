@@ -11,7 +11,7 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Roboto', Helvetica, Arial, sans-serif;
+      font-family: var(--be-font, 'IBM Plex Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif);
       background: #f5f5f5;
     }
 
@@ -524,6 +524,7 @@
   </style>
 
   
+  <link rel="stylesheet" href="https://glasgow46239.github.io/style/be-map.css">
 </head>
 <body>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -1341,16 +1342,9 @@ function stackedBarHTML(shares, cls) {
 
 // FIX 3: update the result bar strip at top of panel
 function updateResultBar(d) {
-  const winner = PARTIES[d.winner] || PARTIES.Ind;
-  const incumbent = PARTIES[d.prev_winner] || winner;
-  const held = d.winner === d.prev_winner;
-  const label = held
-    ? `${winner.label} hold`
-    : `${winner.label} gain from ${incumbent.label}`;
-  document.getElementById('result-bar-incumbent').style.background =
-    incumbent.color;
-  document.getElementById('result-bar-fill').style.background = winner.color;
-  document.getElementById('result-bar-text').textContent = label;
+  // House result line and top rule (glasgow46239.github.io/style): '■ GRN GAIN FROM ■ LAB'
+  const names = {}; Object.keys(PARTIES).forEach(k => { names[k] = PARTIES[k].label; });
+  BE.setResult(document.getElementById('side-panel'), d.winner || 'Ind', d.prev_winner || d.winner || 'Ind', names);
 }
 
 function buildPanelHeader(d) {
