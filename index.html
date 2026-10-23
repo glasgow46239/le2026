@@ -1589,61 +1589,36 @@ function buildMapStyle(geojsonData, DATA) {
 // MAP INITIALISATION
 // ============================================================
 // ============================================================
-// TEMPORARY BASE MAP PREVIEW — only runs with ?basemap=new or ?basemap=warm
+// TEMPORARY BASE MAP PREVIEW — only runs with ?basemap=new
 // in the address. Readers on the normal address see no change.
 // Remove once the shared house base map is in the style repo.
 // ============================================================
 function previewBasemap(map) {
   const q = new URLSearchParams(location.search);
-  const look = q.get('basemap');
-  const lines = q.get('boundaries') === 'dark' ? 'dark' : 'white';
-  if (look !== 'new' && look !== 'warm') return;
-  const ground = look === 'warm' ? { land: '#F1EEE8', water: '#D9DEDF' } : { land: '#F3F3F1', water: '#DCE3E7' };
-  const roads = ['road-path', 'road-minor', 'road-secondary', 'road-primary', 'road-motorway'];
+  if (q.get('basemap') !== 'new') return;
+  // Bobby's notes, 23 Oct: keep the warm ground, built-up cover and brown roads (solid, under the results);
+  // grey water; no parks; no buildings; results at 66%; dark boundaries; Plex Sans labels.
   const set = (id, k, v) => { try { map.setPaintProperty(id, k, v); } catch (e) {} };
   const hide = (id) => { try { map.setLayoutProperty(id, 'visibility', 'none'); } catch (e) {} };
-  const top = (id) => { try { map.moveLayer(id, 'wards-hover'); } catch (e) {} };
-  set('bg', 'background-color', ground.land);
-  set('water', 'fill-color', ground.water); set('water', 'fill-opacity', 1);
-  ['landcover-green', 'landuse-residential', 'railway'].forEach(hide);
-  roads.forEach((id) => {
-    top(id); set(id, 'line-color', '#FFFFFF');
-    set(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 8, 0, 10, 0.25, 13, 0.4]);
-  });
-  ['road-path', 'road-minor'].forEach((id) => set(id, 'line-opacity', ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 0.3]));
-  top('buildings');
-  set('buildings', 'fill-color', '#1A1A1A');
-  set('buildings', 'fill-opacity', ['interpolate', ['linear'], ['zoom'], 12, 0, 13, 0.1, 16, 0.18]);
-  set('wards-fill', 'fill-opacity', 0.8);
-  top('wards-line');
-  if (lines === 'white') {
-    set('wards-line', 'line-color', '#FFFFFF');
-    set('wards-line', 'line-opacity', ['interpolate', ['linear'], ['zoom'], 5, 0.5, 9, 0.95]);
-    set('wards-line', 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.2, 9, 0.7, 12, 1.6, 15, 2.5]);
-  } else {
-    set('wards-line', 'line-color', '#1A1A1A');
-    set('wards-line', 'line-opacity', ['interpolate', ['linear'], ['zoom'], 5, 0.25, 9, 0.45]);
-    set('wards-line', 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.15, 9, 0.5, 12, 1, 15, 1.5]);
-  }
-  set('place-labels', 'text-color', '#1A1A1A');
+  set('water', 'fill-color', '#DCE3E7'); set('water', 'fill-opacity', 1);
+  hide('landcover-green');
+  hide('buildings');
+  set('wards-fill', 'fill-opacity', 0.66);
+  set('wards-line', 'line-color', '#1A1A1A');
+  set('wards-line', 'line-opacity', ['interpolate', ['linear'], ['zoom'], 5, 0.25, 9, 0.45]);
+  set('wards-line', 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.15, 9, 0.5, 12, 1, 15, 1.5]);
+  try {
+    map.setGlyphs('https://glasgow46239.github.io/style/fonts/{fontstack}/{range}.pbf');
+    map.setLayoutProperty('place-labels', 'text-font', ['IBM Plex Sans Regular']);
+  } catch (e) { console.warn('Plex labels unavailable', e); }
 
-  // Small switcher so the options can be compared without editing the address
-  const link = (b, l, label, on) => {
-    const u = new URLSearchParams(location.search);
-    if (b) u.set('basemap', b); else u.delete('basemap');
-    if (l) u.set('boundaries', l); else u.delete('boundaries');
-    const href = location.pathname + (u.toString() ? '?' + u : '');
-    return on ? '<b>' + label + '</b>' : '<a href="' + href + '">' + label + '</a>';
-  };
+  const u = new URLSearchParams(location.search); u.delete('basemap');
+  const back = location.pathname + (u.toString() ? '?' + u : '');
   const chip = document.createElement('div');
   chip.id = 'basemap-preview';
   chip.setAttribute('role', 'note');
   chip.style.cssText = 'position:absolute;left:0.625rem;bottom:2.5rem;z-index:17;background:rgba(255,255,255,.95);border:1px solid #DDD;border-radius:5px;box-shadow:0 1px 5px rgba(0,0,0,.1);padding:0.4rem 0.6rem;font:0.75rem/1.5 var(--be-font);color:#1A1A1A';
-  chip.innerHTML = '<div style="font-size:0.6875rem;text-transform:uppercase;color:#767676">Base map preview</div>'
-    + 'Ground: ' + link('new', lines === 'dark' ? 'dark' : '', 'neutral', look === 'new') + ' · '
-    + link('warm', lines === 'dark' ? 'dark' : '', 'warm grey', look === 'warm') + ' · '
-    + link('', '', 'current', false) + '<br>'
-    + 'Boundaries: ' + link(look, '', 'white', lines === 'white') + ' · ' + link(look, 'dark', 'dark', lines === 'dark');
+  chip.innerHTML = '<div style="font-size:0.6875rem;text-transform:uppercase;color:#767676">Base map preview</div><b>Proposed</b> · <a href="' + back + '">current</a>';
   document.getElementById('map-container').appendChild(chip);
 }
 
