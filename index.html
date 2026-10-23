@@ -1624,7 +1624,10 @@ function previewBasemap(map) {
   set('wards-line', 'line-width', ['interpolate', ['linear'], ['zoom'], 5, 0.15, 9, 0.5, 12, 1, 15, 1.5]);
   try {
     map.setGlyphs('https://glasgow46239.github.io/style/fonts/{fontstack}/{range}.pbf');
-    map.setLayoutProperty('place-labels', 'text-font', ['IBM Plex Sans Regular']);
+    map.setLayoutProperty('place-labels', 'text-font', ['match', ['get', 'class'], ['city', 'town'], ['literal', ['IBM Plex Sans SemiBold']], ['literal', ['IBM Plex Sans Regular']]]);
+    const cls = (city, town, other, hamlet) => ['match', ['get', 'class'], 'city', city, 'town', town, 'hamlet', hamlet, other];
+    map.setLayoutProperty('place-labels', 'text-size', ['interpolate', ['linear'], ['zoom'],
+      6, cls(12, 10.5, 9, 9), 9, cls(14, 12.5, 10, 10), 13, cls(18, 16, 14, 12), 16, cls(20, 18, 15, 13)]);
   } catch (e) { console.warn('Plex labels unavailable', e); }
 
   const u = new URLSearchParams(location.search); u.delete('basemap');
@@ -1679,6 +1682,24 @@ function initMap(geojsonData, DATA) {
     sidePanel.classList.remove('be-has-result');
     if (typeof dismissDrawer === 'function') dismissDrawer();
   }
+  function pinWard(code) {
+    const map = window._electionMap;
+    const fid = geojsonData.features.findIndex((f) => f.properties && f.properties.ward_code === code);
+    if (!map || fid < 0) return;
+    if (pinnedId !== null) map.setFeatureState({ source: 'wards', id: pinnedId }, { pinned: false });
+    if (hoveredId !== null) { map.setFeatureState({ source: 'wards', id: hoveredId }, { hover: false }); hoveredId = null; }
+    pinnedId = fid; pinnedCode = code;
+    map.setFeatureState({ source: 'wards', id: fid }, { pinned: true });
+    const d = DATA[code];
+    if (isWide && d) {
+      const p = PARTIES[d.winner] || PARTIES.Ind;
+      document.getElementById('pin-dot').style.background = p.color;
+      document.getElementById('pin-name').textContent = d.ward_name;
+      pinEl.classList.add('active');
+      sidePanel.classList.add('bm-pinned');
+    }
+  }
+  if (BM_PREVIEW) window.__bmPinWard = pinWard;
   function zoomToWard() {
     const b = pinnedCode && wardBounds(pinnedCode);
     if (!b || !window._electionMap) return;
@@ -1686,19 +1707,21 @@ function initMap(geojsonData, DATA) {
     window._electionMap.fitBounds(b, { padding: { top: 40, bottom: isWide ? 40 : 160, left: 40, right }, maxZoom: 15, duration: 900 });
   }
   if (BM_PREVIEW) {
+    const MAG = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="6.75" cy="6.75" r="4.75"/><path d="M10.25 10.25 14.5 14.5" stroke-linecap="round"/></svg>';
     const btn = (label, title, fn) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'bm-icon-btn'; b.setAttribute('aria-label', title); b.title = title; b.textContent = label;
+      b.type = 'button'; b.className = 'bm-icon-btn'; b.setAttribute('aria-label', title); b.title = title;
+      if (label === 'zoom') b.innerHTML = MAG; else b.textContent = label;
       b.addEventListener('click', (ev) => { ev.stopPropagation(); fn(); });
       return b;
     };
     const tools = document.createElement('div');
     tools.className = 'bm-panel-tools';
-    tools.append(btn('Zoom to ward', 'Zoom to this ward', zoomToWard), btn('×', 'Close', closeResult));
+    tools.append(btn('zoom', 'Zoom to this ward', zoomToWard), btn('×', 'Close', closeResult));
     sidePanel.appendChild(tools);
     const dtools = document.createElement('div');
     dtools.className = 'bm-drawer-tools';
-    dtools.append(btn('Zoom', 'Zoom to this ward', zoomToWard), btn('×', 'Close', closeResult));
+    dtools.append(btn('zoom', 'Zoom to this ward', zoomToWard), btn('×', 'Close', closeResult));
     document.getElementById('drawer-peek-fill').appendChild(dtools);
     document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeResult(); });
     const css = document.createElement('style');
@@ -1707,12 +1730,14 @@ function initMap(geojsonData, DATA) {
       .bm-panel-tools { position: absolute; top: 0.6rem; right: 0.5rem; display: flex; gap: 0.25rem; z-index: 2; }
       #side-panel:not(.bm-pinned) .bm-panel-tools { display: none; }
       .bm-drawer-tools { display: flex; gap: 0.25rem; }
-      .bm-icon-btn { font: 600 0.6875rem/1 var(--be-font); text-transform: uppercase; color: #1A1A1A; background: #fff;
-        border: 1px solid #CCCCCC; border-radius: var(--be-radius, 5px); padding: 0.3rem 0.45rem; cursor: pointer; }
+      .bm-icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.625rem; height: 1.625rem; padding: 0;
+        font: 400 1rem/1 var(--be-font); color: #1A1A1A; background: #fff;
+        border: 1px solid #CCCCCC; border-radius: var(--be-radius, 5px); cursor: pointer; }
       .bm-icon-btn:hover { background: #F5F5F5; }
       .bm-icon-btn:focus-visible { outline: 2px solid #05718F; outline-offset: 1px; }
-      .bm-icon-btn[aria-label="Close"] { font-size: 0.875rem; padding: 0.2rem 0.45rem; text-transform: none; }
-      #side-panel.bm-pinned .result-bar { padding-right: 8.5rem; }`;
+      #side-panel.bm-pinned .result-bar { padding-right: 4.25rem; }
+      #side-panel { transition: opacity 0.15s ease; }
+      #side-panel.bm-moving { opacity: 0; pointer-events: none; }`;
     document.head.appendChild(css);
   }
 
@@ -1809,6 +1834,7 @@ function initMap(geojsonData, DATA) {
 
     map.on('mouseleave', 'wards-fill', () => {
       if (!isWide || pinnedId !== null) return;
+      if (BM_PREVIEW) sidePanel.classList.remove('be-has-result'); // preview: card leaves when the cursor does
       map.getCanvas().style.cursor = '';
       if (hoveredId !== null) {
         map.setFeatureState(
@@ -1818,6 +1844,12 @@ function initMap(geojsonData, DATA) {
         hoveredId = null;
       }
     });
+
+    // Preview: the card steps aside while the map is being panned or zoomed
+    if (BM_PREVIEW) {
+      map.on('movestart', () => sidePanel.classList.add('bm-moving'));
+      map.on('moveend', () => sidePanel.classList.remove('bm-moving'));
+    }
 
     // FIX 6: CLICK — pin the ward; clicking same ward or off unpins
     map.on('click', (e) => {
@@ -2081,6 +2113,7 @@ function initSearch(DATA, geojsonData, map, isWideFn, showSidePanelFn, showDrawe
     } else {
       showDrawerFn(entry.code, DATA);
     }
+    if (window.__bmPinWard) window.__bmPinWard(entry.code); // preview: search pins like a click
   }
 
   input.addEventListener('input', () => {
