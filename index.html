@@ -31,6 +31,20 @@
       transition: width 0.2s ease;
     }
 
+    /* Shown over the base map until the results arrive */
+    #map-loading {
+      position: absolute;
+      top: 10px; left: 52px; /* beside the zoom buttons */
+      z-index: 5;
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 3px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+      font: 500 13px 'IBM Plex Sans', sans-serif;
+      color: #333;
+      pointer-events: none;
+    }
+
     /* =========================================================
        SIDE PANEL
        FIX 1: visibility:hidden by default — no flash on mobile.
@@ -491,6 +505,7 @@
 <body>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
 
   
 
@@ -520,6 +535,7 @@
 
 <div id="map-container" data-be-layout="float">
   <div id="map"></div>
+  <div id="map-loading" role="status">Loading results…</div>
 
   <!-- SIDE PANEL -->
   <div id="side-panel">
@@ -618,8 +634,10 @@ const PARTIES = {
 // CONFIGURATION
 // ============================================================
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUTX4ELi_1_z7p0_eebfACoyTHugHMJjRheTtqFN8K_R5W1WbULLaXstc2ItRnKdgKqVtqKDickDQv/pub?gid=1093971895&single=true&output=csv';
-const GEOJSON_URL = 'wards.geojson';
-const GEOJSON_INLINE = null;
+// Ward boundaries as vector tiles (built with tippecanoe), plus a small
+// ward_code → [west, south, east, north] lookup for zooming and search.
+const TILES_URL = 'wards.pmtiles';
+const BOUNDS_URL = 'ward_bounds.json';
 const MAP_CENTER = [-0.12, 51.51];
 const MAP_ZOOM = 10;
 const YEAR_CURRENT = '2026';
@@ -1423,30 +1441,58 @@ document.getElementById('drawer-handle').addEventListener('click', () => {
 // The ward layers (wards-fill, wards-line, wards-hover,
 // wards-pinned) are appended last so they sit above the base map.
 // ============================================================
-function buildMapStyle(geojsonData, DATA) {
-
-  // Build the winner colour-match expression
-  const colorMatch = ['match', ['get', 'ward_code']];
+// Winner colour for every ward with results
+function winnerColourExpr(DATA) {
+  const expr = ['match', ['get', 'ward_code']];
   Object.entries(DATA).forEach(([code, d]) => {
-    colorMatch.push(code, PARTIES[d.winner]?.color || '#888780');
+    expr.push(code, PARTIES[d.winner]?.color || '#888780');
   });
-  colorMatch.push('#cccccc');
+  expr.push('#cccccc');
+  return expr.length > 3 ? expr : '#cccccc';
+}
+
+// Only draw wards that have results (hides uncontested seats, etc.).
+// 'match' looks codes up in a hash table; an 'in' list was scanned ward by
+// ward for every feature in every tile, which caused much of the zoom lag.
+const HIDE_ALL = ['literal', false];
+function wardFilter(DATA) {
+  const codes = Object.keys(DATA);
+  return codes.length ? ['match', ['get', 'ward_code'], codes, true, false] : HIDE_ALL;
+}
+
+// Results opacity with the hover highlight folded in, so there is one fill
+// layer rather than two (66%; 33% when pinned; hover as the old 25% overlay)
+function wardOpacity(base) {
+  const b = base == null ? 0.66 : base;
+  return ['case',
+    ['boolean', ['feature-state', 'pinned'], false], 0.33,
+    ['boolean', ['feature-state', 'hover'], false], Math.round((b + 0.25 * (1 - b)) * 100) / 100,
+    b];
+}
+
+// The pinned outline only ever draws one ward, so filter the layer to it
+function pinFilter(code) { return code ? ['==', ['get', 'ward_code'], code] : HIDE_ALL; }
+
+// The map is created straight away with the base map; wards stay hidden
+// until the results arrive, then initMap's onData() switches them on.
+function buildMapStyle() {
+  const colorMatch = '#cccccc';
 
   // House base map (glasgow46239.github.io/style/be-basemap.js) beneath the ward layers, labels on top
+  const ward = { source: 'wards', 'source-layer': 'wards', filter: HIDE_ALL };
+
   return BE.basemap.style({
-    sources: { wards: { type: 'geojson', data: geojsonData, generateId: true } },
+    sources: { wards: {
+      type: 'vector',
+      url: 'pmtiles://' + new URL(TILES_URL, location.href).href,
+      promoteId: { wards: 'ward_code' }, // feature id = ward_code, for hover/pin state
+    } },
     layers: [
       // Ward fills: 66%, dropping to 33% on the clicked ward so its streets show through
-      { id: 'wards-fill', type: 'fill', source: 'wards',
-        paint: { 'fill-color': colorMatch, 'fill-opacity': BE.basemap.fillOpacity() } },
-      { id: 'wards-line', type: 'line', source: 'wards', paint: BE.basemap.boundary() },
-      // Hover highlight
-      { id: 'wards-hover', type: 'fill', source: 'wards',
-        paint: {
-          'fill-color': colorMatch,
-          'fill-opacity': ['case', ['boolean', ['feature-state','hover'], false], 0.25, 0],
-        } },
-      { id: 'wards-pinned', type: 'line', source: 'wards', paint: BE.basemap.pinnedLine() },
+      { id: 'wards-fill', type: 'fill', ...ward,
+        paint: { 'fill-color': colorMatch, 'fill-opacity': wardOpacity() } },
+      { id: 'wards-line', type: 'line', ...ward, paint: BE.basemap.boundary() },
+      { id: 'wards-pinned', type: 'line', ...ward, paint: BE.basemap.pinnedLine() }, // filtered to the pinned ward
     ],
   });
 }
@@ -1454,7 +1500,14 @@ function buildMapStyle(geojsonData, DATA) {
 // ============================================================
 // MAP INITIALISATION
 // ============================================================
-function initMap(geojsonData, DATA) {
+// [w, s, e, n] → [[w, s], [e, n]] for fitBounds
+function toLngLatBounds(b) { return b ? [[b[0], b[1]], [b[2], b[3]]] : null; }
+
+// England and Wales, for the first view while results load
+const EW_BOUNDS = [[-5.8, 49.9], [1.8, 55.85]];
+
+function initMap(DATA) {
+  let wardBounds = {}; // filled by onData()
   const container = document.getElementById('map-container');
   const sidePanel = document.getElementById('side-panel');
   const drawer = document.getElementById('drawer');
@@ -1468,12 +1521,13 @@ function initMap(geojsonData, DATA) {
   function unpin() {
     if (pinnedId !== null && window._electionMap) {
       window._electionMap.setFeatureState(
-        { source: 'wards', id: pinnedId },
+        { source: 'wards', sourceLayer: 'wards', id: pinnedId },
         { pinned: false },
       );
     }
     pinnedId = null;
     pinnedCode = null;
+    if (window._electionMap && window._electionMap.getLayer('wards-pinned')) window._electionMap.setFilter('wards-pinned', pinFilter(null));
     sidePanel.classList.remove('bm-pinned');
   }
 
@@ -1486,19 +1540,19 @@ function initMap(geojsonData, DATA) {
   }
   function pinWard(code) {
     const map = window._electionMap;
-    const fid = geojsonData.features.findIndex((f) => f.properties && f.properties.ward_code === code);
-    if (!map || fid < 0) return;
-    if (pinnedId !== null) map.setFeatureState({ source: 'wards', id: pinnedId }, { pinned: false });
-    if (hoveredId !== null) { map.setFeatureState({ source: 'wards', id: hoveredId }, { hover: false }); hoveredId = null; }
+    const fid = code;
+    if (!map || !wardBounds[code]) return;
+    if (pinnedId !== null) map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: pinnedId }, { pinned: false });
+    if (hoveredId !== null) { map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: hoveredId }, { hover: false }); hoveredId = null; }
     pinnedId = fid; pinnedCode = code;
-    map.setFeatureState({ source: 'wards', id: fid }, { pinned: true });
+    map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: fid }, { pinned: true });
+    map.setFilter('wards-pinned', pinFilter(code));
     const d = DATA[code];
     if (isWide && d) sidePanel.classList.add('bm-pinned');
   }
   window.__bmPinWard = pinWard;
   function zoomToWard() {
-    const f = pinnedCode && geojsonData.features.find((x) => x.properties && x.properties.ward_code === pinnedCode);
-    const b = BE.basemap.bounds(f);
+    const b = pinnedCode && toLngLatBounds(wardBounds[pinnedCode]);
     if (!b || !window._electionMap) return;
     const right = isWide ? sidePanel.getBoundingClientRect().width + 30 : 30;
     window._electionMap.fitBounds(b, { padding: { top: 40, bottom: isWide ? 40 : 160, left: 40, right }, maxZoom: 15, duration: 900 });
@@ -1510,6 +1564,7 @@ function initMap(geojsonData, DATA) {
     onZoom: zoomToWard,
     onClose: closeResult,
   });
+
 
   // FIX 1 & 2: layout applied before map renders — no flash
   function applyLayout(wide) {
@@ -1535,13 +1590,14 @@ function initMap(geojsonData, DATA) {
 
   window._electionMap = new maplibregl.Map({
     container: 'map',
-    style: buildMapStyle(geojsonData, DATA),
-    center: MAP_CENTER,
-    zoom: MAP_ZOOM,
+    style: buildMapStyle(),
+    bounds: EW_BOUNDS,
+    fitBoundsOptions: { padding: 20 },
     attributionControl: false,
   });
 
   const map = window._electionMap;
+  const mapLoaded = new Promise((resolve) => map.once('load', resolve));
   map.addControl(
     new maplibregl.NavigationControl({ showCompass: false }),
     'top-left',
@@ -1553,32 +1609,6 @@ function initMap(geojsonData, DATA) {
   map.on('error', (e) => console.warn('MapLibre:', e.error?.message || e));
 
   map.on('load', () => {
-    // Safe bounds fit — handles null geometries, avoids spread stack overflow
-    const coords = geojsonData.features.flatMap((f) => {
-      const geom = f.geometry;
-      if (!geom) return [];
-      if (geom.type === 'Polygon') return geom.coordinates[0];
-      if (geom.type === 'MultiPolygon') return geom.coordinates.flat(2);
-      return [];
-    });
-    if (coords.length) {
-      const lngs = coords.map((c) => c[0]);
-      const lats = coords.map((c) => c[1]);
-      map.fitBounds(
-        [
-          [
-            lngs.reduce((a, b) => Math.min(a, b)),
-            lats.reduce((a, b) => Math.min(a, b)),
-          ],
-          [
-            lngs.reduce((a, b) => Math.max(a, b)),
-            lats.reduce((a, b) => Math.max(a, b)),
-          ],
-        ],
-        { padding: 20, duration: 0 },
-      );
-    }
-
     // HOVER (desktop): highlight only. Results open on click and stay until × / Escape,
     // so panning across the map never flicks the card.
     map.on('mousemove', 'wards-fill', (e) => {
@@ -1586,15 +1616,15 @@ function initMap(geojsonData, DATA) {
       map.getCanvas().style.cursor = 'pointer';
       const fid = e.features[0].id;
       if (hoveredId === fid) return;
-      if (hoveredId !== null) map.setFeatureState({ source: 'wards', id: hoveredId }, { hover: false });
+      if (hoveredId !== null) map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: hoveredId }, { hover: false });
       hoveredId = fid === pinnedId ? null : fid;
-      if (hoveredId !== null) map.setFeatureState({ source: 'wards', id: hoveredId }, { hover: true });
+      if (hoveredId !== null) map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: hoveredId }, { hover: true });
     });
 
     map.on('mouseleave', 'wards-fill', () => {
       map.getCanvas().style.cursor = '';
       if (hoveredId !== null) {
-        map.setFeatureState({ source: 'wards', id: hoveredId }, { hover: false });
+        map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: hoveredId }, { hover: false });
         hoveredId = null;
       }
     });
@@ -1616,13 +1646,13 @@ function initMap(geojsonData, DATA) {
         // Unpin previous, clear hover
         if (pinnedId !== null) {
           map.setFeatureState(
-            { source: 'wards', id: pinnedId },
+            { source: 'wards', sourceLayer: 'wards', id: pinnedId },
             { pinned: false },
           );
         }
         if (hoveredId !== null) {
           map.setFeatureState(
-            { source: 'wards', id: hoveredId },
+            { source: 'wards', sourceLayer: 'wards', id: hoveredId },
             { hover: false },
           );
           hoveredId = null;
@@ -1631,24 +1661,21 @@ function initMap(geojsonData, DATA) {
         pinnedId = fid;
         pinnedCode = code;
         map.setFeatureState(
-          { source: 'wards', id: pinnedId },
+          { source: 'wards', sourceLayer: 'wards', id: pinnedId },
           { pinned: true },
         );
+        map.setFilter('wards-pinned', pinFilter(code));
         showSidePanel(code, DATA);
         sidePanel.classList.add('bm-pinned');
       } else {
-        if (pinnedId !== null) map.setFeatureState({ source: 'wards', id: pinnedId }, { pinned: false });
+        if (pinnedId !== null) map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: pinnedId }, { pinned: false });
         pinnedId = fid; pinnedCode = code;
-        map.setFeatureState({ source: 'wards', id: pinnedId }, { pinned: true });
+        map.setFeatureState({ source: 'wards', sourceLayer: 'wards', id: pinnedId }, { pinned: true });
+        map.setFilter('wards-pinned', pinFilter(code));
         showDrawer(code, DATA);
       }
     });
   });
-
-  // Wire up search once map is available
-  // isWideFn returns current isWide so search can pick panel vs drawer
-  initSearch(DATA, geojsonData, map, () => isWide, showSidePanel, showDrawer);
-  initChoropleth(map, DATA);
 
   // Responsive observer — container width, not viewport
   const ro = new ResizeObserver((entries) => {
@@ -1657,6 +1684,36 @@ function initMap(geojsonData, DATA) {
     if (nowWide !== isWide) applyLayout(nowWide);
   });
   ro.observe(container);
+
+  // Called by bootstrap() once the results (and ward bounds) have arrived:
+  // switch the wards on, colour them, then wire up search and the choropleth.
+  async function onData(bounds) {
+    wardBounds = bounds;
+    await mapLoaded;
+
+    const filter = wardFilter(DATA);
+    ['wards-fill', 'wards-line'].forEach((id) => map.setFilter(id, filter));
+    const colours = winnerColourExpr(DATA);
+    map.setPaintProperty('wards-fill', 'fill-color', colours);
+
+    // Fit to the combined extent of every ward with results
+    const all = Object.values(wardBounds);
+    if (all.length) {
+      map.fitBounds(
+        [
+          [Math.min(...all.map((b) => b[0])), Math.min(...all.map((b) => b[1]))],
+          [Math.max(...all.map((b) => b[2])), Math.max(...all.map((b) => b[3]))],
+        ],
+        { padding: 20, duration: 0 },
+      );
+    }
+
+    // isWideFn returns current isWide so search can pick panel vs drawer
+    initSearch(DATA, wardBounds, map, () => isWide, showSidePanel, showDrawer);
+    initChoropleth(map, DATA);
+  }
+
+  return { onData };
 }
 
 
@@ -1724,16 +1781,13 @@ function initChoropleth(map, DATA) {
 
     if (mode === 'winner') {
       map.setPaintProperty('wards-fill', 'fill-color', getWinnerExpression());
-      map.setPaintProperty('wards-fill', 'fill-opacity', BE.basemap.fillOpacity());
-      // restore hover layer to winner colours too
-      map.setPaintProperty('wards-hover', 'fill-color', getWinnerExpression());
+      map.setPaintProperty('wards-fill', 'fill-opacity', wardOpacity());
       partyWrap.classList.remove('visible');
       legend.classList.remove('visible');
     } else {
       const expr    = buildChoroplethExpression(DATA, party);
       map.setPaintProperty('wards-fill',  'fill-color',   expr);
-      map.setPaintProperty('wards-fill',  'fill-opacity', BE.basemap.fillOpacity(0.85));
-      map.setPaintProperty('wards-hover', 'fill-color',   expr);
+      map.setPaintProperty('wards-fill',  'fill-opacity', wardOpacity(0.85));
       partyWrap.classList.add('visible');
 
       // Update legend
@@ -1762,27 +1816,9 @@ function initChoropleth(map, DATA) {
 // ============================================================
 // SEARCH — ward and council name lookup
 // ============================================================
-function initSearch(DATA, geojsonData, map, isWideFn, showSidePanelFn, showDrawerFn) {
+function initSearch(DATA, wardBounds, map, isWideFn, showSidePanelFn, showDrawerFn) {
   const input   = document.getElementById('search-input');
   const results = document.getElementById('search-results');
-
-  // Build a lookup: ward_code → { ward_name, council, winner, bounds }
-  // Bounds come from the GeoJSON features
-  const boundsByCode = {};
-  geojsonData.features.forEach(f => {
-    const code = f.properties?.ward_code;
-    if (!code || !f.geometry) return;
-    const coords = f.geometry.type === 'Polygon'
-      ? f.geometry.coordinates[0]
-      : f.geometry.coordinates.flat(2);
-    if (!coords.length) return;
-    const lngs = coords.map(c => c[0]);
-    const lats  = coords.map(c => c[1]);
-    boundsByCode[code] = [
-      [lngs.reduce((a,b) => Math.min(a,b)), lats.reduce((a,b) => Math.min(a,b))],
-      [lngs.reduce((a,b) => Math.max(a,b)), lats.reduce((a,b) => Math.max(a,b))],
-    ];
-  });
 
   // Flat list of searchable entries
   const entries = Object.entries(DATA).map(([code, d]) => ({
@@ -1801,7 +1837,7 @@ function initSearch(DATA, geojsonData, map, isWideFn, showSidePanelFn, showDrawe
   function selectEntry(entry) {
     input.value = entry.ward;
     closeResults();
-    const bounds = boundsByCode[entry.code];
+    const bounds = toLngLatBounds(wardBounds[entry.code]);
     if (bounds && map) {
       map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 500 });
     }
@@ -1870,46 +1906,47 @@ function initSearch(DATA, geojsonData, map, isWideFn, showSidePanelFn, showDrawe
 // BOOTSTRAP
 // ============================================================
 async function bootstrap() {
-  let DATA, geojsonData;
+  // Filled in place once the sheet arrives, so the map's handlers see the data
+  const DATA = {};
+  let wardBounds = {};
 
-  try {
-    if (GEOJSON_URL) {
-      const res = await fetch(GEOJSON_URL);
-      geojsonData = await res.json();
-    } else if (GEOJSON_INLINE) {
-      geojsonData = GEOJSON_INLINE;
-    } else {
-      geojsonData = buildDemoGeoJSON();
-    }
-  } catch (err) {
-    console.error('GeoJSON load failed:', err);
-    geojsonData = buildDemoGeoJSON();
-  }
+  // Let MapLibre read the single-file PMTiles archive
+  maplibregl.addProtocol('pmtiles', new pmtiles.Protocol().tile);
 
-  if (SHEET_CSV_URL) {
+  // Draw the map (base map and controls) straight away, before any data
+  const ui = initMap(DATA);
+  const loadingNote = document.getElementById('map-loading');
+
+  // Fetch the bounds and results at once: the wait is the slower of the two
+  const [boundsRes, csvRes] = await Promise.allSettled([
+    fetch(BOUNDS_URL).then((r) => r.json()),
+    SHEET_CSV_URL ? fetch(SHEET_CSV_URL).then((r) => r.text()) : Promise.resolve(null),
+  ]);
+
+  if (boundsRes.status === 'fulfilled') wardBounds = boundsRes.value;
+  else console.error('Ward bounds load failed:', boundsRes.reason);
+
+  let gotResults = false;
+  if (csvRes.status === 'fulfilled' && csvRes.value) {
     try {
-      const res = await fetch(SHEET_CSV_URL);
-      const text = await res.text();
-      DATA = buildDataFromCSV(parseCSV(text));
+      Object.assign(DATA, buildDataFromCSV(parseCSV(csvRes.value)));
+      gotResults = Object.keys(DATA).length > 0;
     } catch (err) {
-      console.warn('CSV load failed, using demo:', err);
-      DATA = buildDemoData();
+      console.warn('CSV parse failed, using demo:', err);
     }
-  } else {
-    DATA = buildDemoData();
+  } else if (csvRes.status === 'rejected') {
+    console.warn('CSV load failed, using demo:', csvRes.reason);
   }
+  if (!gotResults) Object.assign(DATA, buildDemoData());
 
-  // Fix 2: remove features with no matching result data
-  // This hides Scottish wards, uncontested seats, etc.
-  geojsonData = {
-    ...geojsonData,
-    features: geojsonData.features.filter((f) => {
-      const code = f.properties?.ward_code;
-      return code && DATA[code];
-    }),
-  };
+  // Keep only wards with results (the map layers apply the same filter)
+  wardBounds = Object.fromEntries(
+    Object.entries(wardBounds).filter(([code]) => DATA[code]),
+  );
 
-  initMap(geojsonData, DATA);
+  await ui.onData(wardBounds);
+  if (gotResults) loadingNote.remove();
+  else loadingNote.textContent = 'Results could not be loaded. Please refresh the page.';
 }
 
 bootstrap();
